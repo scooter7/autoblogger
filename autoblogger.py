@@ -85,6 +85,7 @@ def publish_blog_post(blog_post_title, blog_content):
         logging.error("Failed to publish blog post: %s", str(e))
         return False
 
+
 def cron_function():
     """
     A cron-like function that generates and publishes a blog post every 30 minutes.
@@ -122,6 +123,7 @@ def cron_function():
             # Handle errors without crashing the loop
             time.sleep(30)
 
+
 def start_cron_job_in_background():
     """
     Starts the cron job in a single background thread.
@@ -134,11 +136,6 @@ def start_cron_job_in_background():
     else:
         logging.info("Cron job is already running.")
 
-# Streamlit Button to Start Cron Job
-if st.button("Start Cron Job"):
-    with st.spinner("Starting the cron job..."):
-        start_cron_job_in_background()
-        st.success("Cron job started! The app will generate and publish a new post every 30 minutes.")
 
 # Streamlit UI
 st.title("Automated WordPress Blog Post Creator")
@@ -148,14 +145,14 @@ blog_title = st.text_input("Enter the blog title:", placeholder="e.g., The Futur
 blog_topic = st.text_input("Enter the blog topic:", placeholder="e.g., Artificial Intelligence in Development")
 keywords = st.text_area("Enter keywords (comma-separated):", placeholder="e.g., AI, software development, innovation")
 
-# Start the cron job
-if st.button("Start Cron Job"):
+# Streamlit Button to Start Cron Job
+if st.button("Start Cron Job", key="start_cron_button"):
     with st.spinner("Starting the cron job..."):
         start_cron_job_in_background()
         st.success("Cron job started! The app will generate and publish a new post every 30 minutes.")
 
 # Manual trigger for generating and publishing blog posts
-if st.button("Generate and Publish Blog Post"):
+if st.button("Generate and Publish Blog Post", key="manual_generate_button"):
     if not blog_title or not blog_topic or not keywords:
         st.error("Please fill in the blog title, topic, and keywords before proceeding.")
     else:
