@@ -88,22 +88,20 @@ def publish_blog_post(blog_post_title, blog_content):
         logging.error("Failed to publish blog post: %s", str(e))
         return False
 
-
 def cron_function():
     """
     A cron-like function that generates and publishes a blog post every 30 minutes.
     """
     interval = 1800  # 30 minutes in seconds
+    if "next_run_time" not in st.session_state:
+        st.session_state["next_run_time"] = time.time() + interval
 
     while True:
-        with cron_lock:  # Ensure only one thread can execute the critical section
+        with cron_lock:
             try:
-                # Check last execution time from session state
-                last_run_time = st.session_state.get("last_cron_run", 0)
                 current_time = time.time()
 
-                # Ensure the interval has passed
-                if current_time - last_run_time >= interval:
+                if current_time >= st.session_state["next_run_time"]:
                     # Define dynamic inputs for automation
                     blog_title = f"Automated Post {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                     blog_topic = "Technology Trends"
@@ -118,30 +116,27 @@ def cron_function():
                     else:
                         logging.error("Cron job: Failed to generate blog content")
 
-                    # Update the last run time
-                    st.session_state["last_cron_run"] = current_time
+                    # Update the next run time
+                    st.session_state["next_run_time"] = current_time + interval
                     logging.info("Cron job completed. Next run scheduled in 30 minutes.")
                 else:
-                    logging.info("Skipping cron job; interval has not passed.")
+                    time.sleep(5)
             except Exception as e:
                 logging.error("Cron job failed: %s", str(e))
-
-        # Sleep to avoid constant checking
-        time.sleep(5)
-
+                time.sleep(30)
 
 def start_cron_job_in_background():
     """
     Starts the cron job in a single background thread.
     """
-    if "cron_thread" not in st.session_state:
+    if "cron_thread" not in st.session_state or not st.session_state["cron_thread"].is_alive():
+        # Create and start the thread only if it doesn't exist or isn't alive
         thread = threading.Thread(target=cron_function, daemon=True)
         thread.start()
         st.session_state["cron_thread"] = thread
         logging.info("Cron job thread started.")
     else:
         logging.info("Cron job is already running.")
-
 
 # Streamlit UI
 st.title("Automated WordPress Blog Post Creator")
