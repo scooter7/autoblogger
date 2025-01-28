@@ -46,10 +46,11 @@ async def generate_blog_content(blog_title, blog_topic, keywords):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",  # Replace with gpt-3.5-turbo if gpt-4o fails
+            model="gpt-4o",
             messages=[{'role': 'user', 'content': prompt}]
         )
-        content = response["choices"][0]["message"]["content"]
+        # Use dot notation to access response fields
+        content = response.choices[0].message.content
         logging.info("Generated blog content for title: %s", blog_title)
         return content
     except Exception as e:
