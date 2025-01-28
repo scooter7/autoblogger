@@ -8,6 +8,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from datetime import datetime
 import threading
+import time
 
 # Load environment variables
 load_dotenv()
@@ -105,11 +106,13 @@ def cron_function():
             else:
                 logging.error("Cron job: Failed to generate blog content")
 
-            # Wait for 30 minutes before generating the next post
-            time.sleep(1800)  # 30 minutes
+            logging.info("Cron job completed. Waiting for 30 minutes...")
+            # Wait for 30 minutes (1800 seconds)
+            time.sleep(1800)
         except Exception as e:
             logging.error("Cron job failed: %s", str(e))
-
+            # Avoid crashing; wait before retrying
+            time.sleep(1800)
 
 def start_cron_job_in_background():
     """
@@ -118,7 +121,6 @@ def start_cron_job_in_background():
     thread = threading.Thread(target=cron_function, daemon=True)
     thread.start()
     return thread
-
 
 # Streamlit UI
 st.title("Automated WordPress Blog Post Creator")
