@@ -10,19 +10,19 @@ from dotenv import load_dotenv
 # Load environment variables (optional for local testing)
 load_dotenv()
 
-# Configure Streamlit secrets
-st.secrets = {
-    "WP_USERNAME": os.getenv("WP_USERNAME") or st.secrets.get("WP_USERNAME"),
-    "WP_APP_PASSWORD": os.getenv("WP_APP_PASSWORD") or st.secrets.get("WP_APP_PASSWORD"),
-    "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY"),
-}
+# Fetch secrets and environment variables with fallback handling
+domain = st.secrets.get("WP_DOMAIN") or os.getenv("WP_DOMAIN")
+username = st.secrets.get("WP_USERNAME") or os.getenv("WP_USERNAME")
+app_password = st.secrets.get("WP_APP_PASSWORD") or os.getenv("WP_APP_PASSWORD")
+openai_api_key = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+
+# Ensure all required secrets are present
+if not all([domain, username, app_password, openai_api_key]):
+    raise KeyError("One or more required secrets (WP_DOMAIN, WP_USERNAME, WP_APP_PASSWORD, OPENAI_API_KEY) are missing.")
 
 # WordPress site details
-domain = st.secrets["WP_DOMAIN"]  # Store in secrets
 endpoint = "/wp-json/wp/v2/posts/"
 url = f"{domain}{endpoint}"
-username = st.secrets["WP_USERNAME"]
-app_password = st.secrets["WP_APP_PASSWORD"]
 
 # Configure logging
 logging.basicConfig(
@@ -33,7 +33,7 @@ logging.basicConfig(
 )
 
 # Initialize OpenAI client
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+client = OpenAI(api_key=openai_api_key)
 
 # Function to generate blog content
 async def generate_blog_content(blog_title, blog_topic, keywords):
