@@ -85,42 +85,60 @@ def publish_blog_post(blog_post_title, blog_content):
         logging.error("Failed to publish blog post: %s", str(e))
         return False
 
-
 def cron_function():
     """
     A cron-like function that generates and publishes a blog post every 30 minutes.
     """
+    last_run_time = 0  # Timestamp of the last execution
+    interval = 1800  # 30 minutes in seconds
+
     while True:
         try:
-            # Define dynamic inputs for automation
-            blog_title = f"Automated Post {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            blog_topic = "Technology Trends"
-            keywords = ["AI", "software development", "automation"]
+            current_time = time.time()
+            if current_time - last_run_time >= interval:
+                # Define dynamic inputs for automation
+                blog_title = f"Automated Post {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                blog_topic = "Technology Trends"
+                keywords = ["AI", "software development", "automation"]
 
-            logging.info("Cron job started: Generating blog content")
-            blog_content = asyncio.run(generate_blog_content(blog_title, blog_topic, keywords))
+                logging.info("Cron job started: Generating blog content")
+                blog_content = asyncio.run(generate_blog_content(blog_title, blog_topic, keywords))
 
-            if blog_content:
-                logging.info("Cron job: Publishing blog content")
-                publish_blog_post(blog_title, blog_content)
+                if blog_content:
+                    logging.info("Cron job: Publishing blog content")
+                    publish_blog_post(blog_title, blog_content)
+                else:
+                    logging.error("Cron job: Failed to generate blog content")
+
+                # Update the last run time
+                last_run_time = current_time
+
+                logging.info("Cron job completed. Next run in 30 minutes.")
             else:
-                logging.error("Cron job: Failed to generate blog content")
-
-            logging.info("Cron job completed. Waiting for 30 minutes...")
-            # Wait for 30 minutes (1800 seconds)
-            time.sleep(1800)
+                # Sleep briefly to avoid excessive CPU usage
+                time.sleep(5)
         except Exception as e:
             logging.error("Cron job failed: %s", str(e))
-            # Avoid crashing; wait before retrying
-            time.sleep(1800)
+            # Handle errors without crashing the loop
+            time.sleep(30)
 
 def start_cron_job_in_background():
     """
-    Starts the cron job in a separate thread.
+    Starts the cron job in a single background thread.
     """
-    thread = threading.Thread(target=cron_function, daemon=True)
-    thread.start()
-    return thread
+    if "cron_thread" not in st.session_state:
+        thread = threading.Thread(target=cron_function, daemon=True)
+        thread.start()
+        st.session_state["cron_thread"] = thread
+        logging.info("Cron job thread started.")
+    else:
+        logging.info("Cron job is already running.")
+
+# Streamlit Button to Start Cron Job
+if st.button("Start Cron Job"):
+    with st.spinner("Starting the cron job..."):
+        start_cron_job_in_background()
+        st.success("Cron job started! The app will generate and publish a new post every 30 minutes.")
 
 # Streamlit UI
 st.title("Automated WordPress Blog Post Creator")
