@@ -1,16 +1,13 @@
 import asyncio
 import os
-import random
 import logging
 import streamlit as st
-from streamlit.runtime.scriptrunner import add_script_run_ctx
 from requests.auth import HTTPBasicAuth
-from datetime import datetime, timedelta
 import requests
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# Load environment variables (optional with `.env` for local testing)
+# Load environment variables (optional for local testing)
 load_dotenv()
 
 # Configure Streamlit secrets
@@ -38,47 +35,22 @@ logging.basicConfig(
 # Initialize OpenAI client
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# List of seed words for dynamic blog post title generation
-seed_words = [
-    'Artificial Intelligence', 'Machine Learning', 'Web Development',
-    'Python Programming', 'Java Development', 'Database Management',
-    'React Development', 'Vue Framework', 'Tailwind CSS', 'Software Business Strategies'
-]
-
-# Function to generate blog post title
-async def generate_blog_post_title():
-    seed_word = random.choice(seed_words)
-    message = {
-        'role': 'user',
-        'content': f'Generate one blog post title on "{seed_word}" targeted at tech enthusiasts and developers. It should be clear, professional, and ready for use.'
-    }
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[message]
-        )
-        title = response["choices"][0]["message"]["content"].strip()
-        logging.info("Generated blog post title: %s", title)
-        return title
-    except Exception as e:
-        logging.error("Failed to generate blog post title: %s", str(e))
-        return None
-
 # Function to generate blog content
-async def generate_blog_content(blog_post_title):
-    message = {
-        'role': 'user',
-        'content': f"Create a 15-minute read blog post titled '{blog_post_title}' for software developers. Use proper HTML structure with <h1>, <h2>, <p>, <b>, and <code> tags. Include practical examples and applications."
-    }
+async def generate_blog_content(blog_title, blog_topic, keywords):
+    prompt = (
+        f"Create a detailed 15-minute read blog post titled '{blog_title}'. "
+        f"Focus on the topic: '{blog_topic}' and incorporate the following keywords: {', '.join(keywords)}. "
+        f"The blog should be well-structured for developers and businesses, using proper HTML tags like <h1>, <h2>, <p>, "
+        f"and <code>. Include practical examples, analysis, and applications."
+    )
 
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
-            messages=[message]
+            messages=[{'role': 'user', 'content': prompt}]
         )
         content = response["choices"][0]["message"]["content"]
-        logging.info("Generated blog content for title: %s", blog_post_title)
+        logging.info("Generated blog content for title: %s", blog_title)
         return content
     except Exception as e:
         logging.error("Failed to generate blog content: %s", str(e))
@@ -101,37 +73,45 @@ def publish_blog_post(blog_post_title, blog_content):
 
         if response.status_code == 201:
             logging.info("Post created successfully! Post ID: %s", response.json().get('id'))
+            return True
         else:
             logging.error("Failed to create post. Status Code: %d, Response: %s", response.status_code, response.text)
+            return False
     except Exception as e:
         logging.error("Failed to publish blog post: %s", str(e))
-
-# Function to handle blog creation flow
-async def create_blog_post():
-    try:
-        blog_post_title = await generate_blog_post_title()
-        if not blog_post_title:
-            return
-
-        blog_content = await generate_blog_content(blog_post_title)
-        if not blog_content:
-            return
-
-        publish_blog_post(blog_post_title, blog_content)
-    except Exception as e:
-        logging.error("Error in creating blog post: %s", str(e))
-
-# Cron-like function within the app
-def cron_like_function(interval_minutes=30):
-    next_run = datetime.now() + timedelta(minutes=interval_minutes)
-    while True:
-        if datetime.now() >= next_run:
-            asyncio.run(create_blog_post())
-            next_run = datetime.now() + timedelta(minutes=interval_minutes)
+        return False
 
 # Streamlit UI
 st.title("Automated WordPress Blog Post Creator")
-if st.button("Start Blog Automation"):
-    logging.info("Blog automation started.")
-    add_script_run_ctx(asyncio.create_task(cron_like_function()))
-    st.success("Blog automation has started! Check logs for progress.")
+
+# Input fields for user-defined title, topic, and keywords
+blog_title = st.text_input("Enter the blog title:", placeholder="e.g., The Future of AI in Software Development")
+blog_topic = st.text_input("Enter the blog topic:", placeholder="e.g., Artificial Intelligence in Development")
+keywords = st.text_area("Enter keywords (comma-separated):", placeholder="e.g., AI, software development, innovation")
+
+# Generate blog post on button click
+if st.button("Generate and Publish Blog Post"):
+    if not blog_title or not blog_topic or not keywords:
+        st.error("Please fill in the blog title, topic, and keywords before proceeding.")
+    else:
+        # Process keywords into a list
+        keyword_list = [kw.strip() for kw in keywords.split(",") if kw.strip()]
+        
+        # Log start of process
+        logging.info("Starting blog generation with title: %s", blog_title)
+        
+        # Generate blog content
+        with st.spinner("Generating blog content..."):
+            blog_content = asyncio.run(generate_blog_content(blog_title, blog_topic, keyword_list))
+        
+        if blog_content:
+            # Publish the blog post
+            with st.spinner("Publishing blog post to WordPress..."):
+                success = publish_blog_post(blog_title, blog_content)
+            
+            if success:
+                st.success("Blog post published successfully!")
+            else:
+                st.error("Failed to publish blog post. Check the logs for details.")
+        else:
+            st.error("Failed to generate blog content. Check the logs for details.")
