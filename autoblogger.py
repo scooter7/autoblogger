@@ -37,6 +37,7 @@ client = OpenAI(api_key=openai_api_key)
 
 # Function to generate blog content
 async def generate_blog_content(blog_title, blog_topic, keywords):
+async def generate_blog_content(blog_title, blog_topic, keywords):
     prompt = (
         f"Create a detailed 15-minute read blog post titled '{blog_title}'. "
         f"Focus on the topic: '{blog_topic}' and incorporate the following keywords: {', '.join(keywords)}. "
@@ -46,7 +47,7 @@ async def generate_blog_content(blog_title, blog_topic, keywords):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o",  # Replace with gpt-3.5-turbo if gpt-4o fails
             messages=[{'role': 'user', 'content': prompt}]
         )
         content = response["choices"][0]["message"]["content"]
@@ -54,6 +55,7 @@ async def generate_blog_content(blog_title, blog_topic, keywords):
         return content
     except Exception as e:
         logging.error("Failed to generate blog content: %s", str(e))
+        st.error(f"Error generating blog content: {e}")
         return None
 
 # Function to publish blog post on WordPress
