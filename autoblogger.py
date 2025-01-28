@@ -37,7 +37,6 @@ client = OpenAI(api_key=openai_api_key)
 
 # Function to generate blog content
 async def generate_blog_content(blog_title, blog_topic, keywords):
-async def generate_blog_content(blog_title, blog_topic, keywords):
     prompt = (
         f"Create a detailed 15-minute read blog post titled '{blog_title}'. "
         f"Focus on the topic: '{blog_topic}' and incorporate the following keywords: {', '.join(keywords)}. "
