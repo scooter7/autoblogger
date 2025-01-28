@@ -6,12 +6,8 @@ from requests.auth import HTTPBasicAuth
 import requests
 from openai import OpenAI
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
-import nest_asyncio
+from datetime import datetime
 import threading
-
-# Required to handle asyncio in Streamlit
-nest_asyncio.apply()
 
 # Load environment variables
 load_dotenv()
@@ -89,7 +85,7 @@ def publish_blog_post(blog_post_title, blog_content):
         return False
 
 
-async def cron_function():
+def cron_function():
     """
     A cron-like function that generates and publishes a blog post every 30 minutes.
     """
@@ -101,7 +97,7 @@ async def cron_function():
             keywords = ["AI", "software development", "automation"]
 
             logging.info("Cron job started: Generating blog content")
-            blog_content = await generate_blog_content(blog_title, blog_topic, keywords)
+            blog_content = asyncio.run(generate_blog_content(blog_title, blog_topic, keywords))
 
             if blog_content:
                 logging.info("Cron job: Publishing blog content")
@@ -110,7 +106,7 @@ async def cron_function():
                 logging.error("Cron job: Failed to generate blog content")
 
             # Wait for 30 minutes before generating the next post
-            await asyncio.sleep(1800)
+            time.sleep(1800)  # 30 minutes
         except Exception as e:
             logging.error("Cron job failed: %s", str(e))
 
@@ -119,9 +115,9 @@ def start_cron_job_in_background():
     """
     Starts the cron job in a separate thread.
     """
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(cron_function())
+    thread = threading.Thread(target=cron_function, daemon=True)
+    thread.start()
+    return thread
 
 
 # Streamlit UI
@@ -132,11 +128,10 @@ blog_title = st.text_input("Enter the blog title:", placeholder="e.g., The Futur
 blog_topic = st.text_input("Enter the blog topic:", placeholder="e.g., Artificial Intelligence in Development")
 keywords = st.text_area("Enter keywords (comma-separated):", placeholder="e.g., AI, software development, innovation")
 
-# Start the cron job automatically when the app is running
+# Start the cron job
 if st.button("Start Cron Job"):
     with st.spinner("Starting the cron job..."):
-        thread = threading.Thread(target=start_cron_job_in_background, daemon=True)
-        thread.start()
+        start_cron_job_in_background()
         st.success("Cron job started! The app will generate and publish a new post every 30 minutes.")
 
 # Manual trigger for generating and publishing blog posts
