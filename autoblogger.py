@@ -8,6 +8,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import nest_asyncio
+import threading
 
 # Required to handle asyncio in Streamlit
 nest_asyncio.apply()
@@ -114,6 +115,15 @@ async def cron_function():
             logging.error("Cron job failed: %s", str(e))
 
 
+def start_cron_job_in_background():
+    """
+    Starts the cron job in a separate thread.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(cron_function())
+
+
 # Streamlit UI
 st.title("Automated WordPress Blog Post Creator")
 
@@ -125,7 +135,8 @@ keywords = st.text_area("Enter keywords (comma-separated):", placeholder="e.g., 
 # Start the cron job automatically when the app is running
 if st.button("Start Cron Job"):
     with st.spinner("Starting the cron job..."):
-        asyncio.create_task(cron_function())  # Run the cron function in the background
+        thread = threading.Thread(target=start_cron_job_in_background, daemon=True)
+        thread.start()
         st.success("Cron job started! The app will generate and publish a new post every 30 minutes.")
 
 # Manual trigger for generating and publishing blog posts
