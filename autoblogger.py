@@ -90,13 +90,13 @@ def cron_function():
     """
     A cron-like function that generates and publishes a blog post every 30 minutes.
     """
-    last_run_time = 0  # Timestamp of the last execution
     interval = 1800  # 30 minutes in seconds
+    next_run_time = time.time() + interval  # Schedule the next run time
 
     while True:
         try:
             current_time = time.time()
-            if current_time - last_run_time >= interval:
+            if current_time >= next_run_time:
                 # Define dynamic inputs for automation
                 blog_title = f"Automated Post {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                 blog_topic = "Technology Trends"
@@ -111,18 +111,16 @@ def cron_function():
                 else:
                     logging.error("Cron job: Failed to generate blog content")
 
-                # Update the last run time
-                last_run_time = current_time
-
-                logging.info("Cron job completed. Next run in 30 minutes.")
+                # Schedule the next run
+                next_run_time = current_time + interval
+                logging.info("Cron job completed. Next run scheduled in 30 minutes.")
             else:
                 # Sleep briefly to avoid excessive CPU usage
-                time.sleep(5)
+                time.sleep(10)
         except Exception as e:
             logging.error("Cron job failed: %s", str(e))
             # Handle errors without crashing the loop
             time.sleep(30)
-
 
 def start_cron_job_in_background():
     """
