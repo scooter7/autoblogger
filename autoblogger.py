@@ -39,13 +39,10 @@ logging.basicConfig(
 client = OpenAI(api_key=openai_api_key)
 
 # Global Variables for Cron Job
-cron_running_flag = False  # Controls the cron job
+cron_stop_event = threading.Event()  # Event to stop the cron job
 cron_thread = None  # Stores the cron job thread
 cron_topic = None  # Stores the topic for cron-generated posts
 cron_keywords = None  # Stores the keywords for cron-generated posts
-
-# Lock for thread-safe operations
-cron_lock = threading.Lock()
 
 
 async def generate_blog_content(blog_title, blog_topic, keywords):
@@ -126,34 +123,30 @@ def cron_function():
     """
     A cron-like function that generates and publishes a blog post every 30 minutes.
     """
-    global cron_running_flag, cron_topic, cron_keywords  
+    global cron_topic, cron_keywords  
+
     interval = 1800  # 30 minutes in seconds
 
-    while True:
-        with cron_lock:
-            if not cron_running_flag:
-                logging.info("Cron job stopped.")
-                return  # Exit the function to stop the thread
+    while not cron_stop_event.is_set():  # Only run while stop event is NOT set
+        logging.info("Cron job started: Checking if it's time to post.")
 
-            logging.info("Cron job started: Checking if it's time to post.")
+        # Generate a relevant title dynamically
+        blog_title = asyncio.run(generate_blog_title(cron_topic, cron_keywords))
 
-            # Generate a relevant title dynamically
-            blog_title = asyncio.run(generate_blog_title(cron_topic, cron_keywords))
+        logging.info("Generating blog content for: %s", blog_title)
+        blog_content = asyncio.run(generate_blog_content(blog_title, cron_topic, cron_keywords))
 
-            logging.info("Generating blog content for: %s", blog_title)
-            blog_content = asyncio.run(generate_blog_content(blog_title, cron_topic, cron_keywords))
+        if blog_content:
+            logging.info("Publishing blog post: %s", blog_title)
+            publish_blog_post(blog_title, blog_content)
+        else:
+            logging.error("Cron job: Failed to generate blog content")
 
-            if blog_content:
-                logging.info("Publishing blog post: %s", blog_title)
-                publish_blog_post(blog_title, blog_content)
-            else:
-                logging.error("Cron job: Failed to generate blog content")
+        logging.info("Cron job completed. Next run in 30 minutes.")
 
-            logging.info("Cron job completed. Next run in 30 minutes.")
-
-        # Sleep in small intervals and check flag to stop early if needed
-        for _ in range(interval // 5):  # Check every 5 seconds
-            if not cron_running_flag:
+        # Sleep for 30 minutes, but check every 5 seconds if stop event is set
+        for _ in range(interval // 5):
+            if cron_stop_event.is_set():
                 logging.info("Cron job stopping...")
                 return
             time.sleep(5)
@@ -163,10 +156,10 @@ def start_cron_job(topic, keywords):
     """
     Starts the cron job with user-specified topic and keywords.
     """
-    global cron_running_flag, cron_thread, cron_topic, cron_keywords
+    global cron_thread, cron_topic, cron_keywords
     cron_topic = topic
     cron_keywords = keywords
-    cron_running_flag = True
+    cron_stop_event.clear()  # Ensure the stop flag is cleared
 
     if cron_thread is None or not cron_thread.is_alive():
         cron_thread = threading.Thread(target=cron_function, daemon=True)
@@ -177,8 +170,7 @@ def stop_cron_job():
     """
     Stops the cron job.
     """
-    global cron_running_flag
-    cron_running_flag = False
+    cron_stop_event.set()  # Signal the thread to stop
     logging.info("Cron job has been stopped.")
 
 # Streamlit UI
