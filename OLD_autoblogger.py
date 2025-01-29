@@ -38,6 +38,9 @@ logging.basicConfig(
 # Initialize OpenAI client
 client = OpenAI(api_key=openai_api_key)
 
+# Global lock to prevent multiple threads from executing concurrently
+cron_lock = threading.Lock()
+
 
 async def generate_blog_content(blog_title, blog_topic, keywords):
     prompt = (
@@ -85,57 +88,55 @@ def publish_blog_post(blog_post_title, blog_content):
         logging.error("Failed to publish blog post: %s", str(e))
         return False
 
-
 def cron_function():
     """
     A cron-like function that generates and publishes a blog post every 30 minutes.
     """
-    last_run_time = 0  # Timestamp of the last execution
     interval = 1800  # 30 minutes in seconds
+    if "next_run_time" not in st.session_state:
+        st.session_state["next_run_time"] = time.time() + interval
 
     while True:
-        try:
-            current_time = time.time()
-            if current_time - last_run_time >= interval:
-                # Define dynamic inputs for automation
-                blog_title = f"Automated Post {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                blog_topic = "Technology Trends"
-                keywords = ["AI", "software development", "automation"]
+        with cron_lock:
+            try:
+                current_time = time.time()
 
-                logging.info("Cron job started: Generating blog content")
-                blog_content = asyncio.run(generate_blog_content(blog_title, blog_topic, keywords))
+                if current_time >= st.session_state["next_run_time"]:
+                    # Define dynamic inputs for automation
+                    blog_title = f"Automated Post {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    blog_topic = "Technology Trends"
+                    keywords = ["AI", "software development", "automation"]
 
-                if blog_content:
-                    logging.info("Cron job: Publishing blog content")
-                    publish_blog_post(blog_title, blog_content)
+                    logging.info("Cron job started: Generating blog content")
+                    blog_content = asyncio.run(generate_blog_content(blog_title, blog_topic, keywords))
+
+                    if blog_content:
+                        logging.info("Cron job: Publishing blog content")
+                        publish_blog_post(blog_title, blog_content)
+                    else:
+                        logging.error("Cron job: Failed to generate blog content")
+
+                    # Update the next run time
+                    st.session_state["next_run_time"] = current_time + interval
+                    logging.info("Cron job completed. Next run scheduled in 30 minutes.")
                 else:
-                    logging.error("Cron job: Failed to generate blog content")
-
-                # Update the last run time
-                last_run_time = current_time
-
-                logging.info("Cron job completed. Next run in 30 minutes.")
-            else:
-                # Sleep briefly to avoid excessive CPU usage
-                time.sleep(5)
-        except Exception as e:
-            logging.error("Cron job failed: %s", str(e))
-            # Handle errors without crashing the loop
-            time.sleep(30)
-
+                    time.sleep(5)
+            except Exception as e:
+                logging.error("Cron job failed: %s", str(e))
+                time.sleep(30)
 
 def start_cron_job_in_background():
     """
     Starts the cron job in a single background thread.
     """
-    if "cron_thread" not in st.session_state:
+    if "cron_thread" not in st.session_state or not st.session_state["cron_thread"].is_alive():
+        # Create and start the thread only if it doesn't exist or isn't alive
         thread = threading.Thread(target=cron_function, daemon=True)
         thread.start()
         st.session_state["cron_thread"] = thread
         logging.info("Cron job thread started.")
     else:
         logging.info("Cron job is already running.")
-
 
 # Streamlit UI
 st.title("Automated WordPress Blog Post Creator")
