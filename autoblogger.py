@@ -47,6 +47,7 @@ cron_keywords = None  # Stores the keywords for cron-generated posts
 # Lock for thread-safe operations
 cron_lock = threading.Lock()
 
+
 async def generate_blog_content(blog_title, blog_topic, keywords):
     """
     Uses OpenAI to generate a blog post based on the given title, topic, and keywords.
@@ -70,6 +71,7 @@ async def generate_blog_content(blog_title, blog_topic, keywords):
         logging.error("Failed to generate blog content: %s", str(e))
         return None
 
+
 async def generate_blog_title(blog_topic, keywords):
     """
     Uses OpenAI to generate a relevant blog title based on the topic and keywords.
@@ -90,6 +92,7 @@ async def generate_blog_title(blog_topic, keywords):
     except Exception as e:
         logging.error("Failed to generate blog title: %s", str(e))
         return "Untitled Blog Post"
+
 
 def publish_blog_post(blog_post_title, blog_content):
     """
@@ -118,6 +121,7 @@ def publish_blog_post(blog_post_title, blog_content):
         logging.error("Failed to publish blog post: %s", str(e))
         return False
 
+
 def cron_function():
     """
     A cron-like function that generates and publishes a blog post every 30 minutes.
@@ -125,35 +129,35 @@ def cron_function():
     global cron_running_flag, cron_topic, cron_keywords  
     interval = 1800  # 30 minutes in seconds
 
-    while cron_running_flag:
-        try:
-            with cron_lock:
-                logging.info("Cron job started: Checking if it's time to post.")
+    while True:
+        with cron_lock:
+            if not cron_running_flag:
+                logging.info("Cron job stopped.")
+                return  # Exit the function to stop the thread
 
-                # Generate a relevant title dynamically
-                blog_title = asyncio.run(generate_blog_title(cron_topic, cron_keywords))
+            logging.info("Cron job started: Checking if it's time to post.")
 
-                logging.info("Generating blog content for: %s", blog_title)
-                blog_content = asyncio.run(generate_blog_content(blog_title, cron_topic, cron_keywords))
+            # Generate a relevant title dynamically
+            blog_title = asyncio.run(generate_blog_title(cron_topic, cron_keywords))
 
-                if blog_content:
-                    logging.info("Publishing blog post: %s", blog_title)
-                    publish_blog_post(blog_title, blog_content)
-                else:
-                    logging.error("Cron job: Failed to generate blog content")
+            logging.info("Generating blog content for: %s", blog_title)
+            blog_content = asyncio.run(generate_blog_content(blog_title, cron_topic, cron_keywords))
 
-                logging.info("Cron job completed. Next run in 30 minutes.")
+            if blog_content:
+                logging.info("Publishing blog post: %s", blog_title)
+                publish_blog_post(blog_title, blog_content)
+            else:
+                logging.error("Cron job: Failed to generate blog content")
 
-            # Sleep until the next scheduled post
-            for _ in range(interval // 5):
-                if not cron_running_flag:
-                    logging.info("Cron job stopped before next run.")
-                    return
-                time.sleep(5)
+            logging.info("Cron job completed. Next run in 30 minutes.")
 
-        except Exception as e:
-            logging.error("Cron job failed: %s", str(e))
-            time.sleep(30)  # Wait before retrying
+        # Sleep in small intervals and check flag to stop early if needed
+        for _ in range(interval // 5):  # Check every 5 seconds
+            if not cron_running_flag:
+                logging.info("Cron job stopping...")
+                return
+            time.sleep(5)
+
 
 def start_cron_job(topic, keywords):
     """
