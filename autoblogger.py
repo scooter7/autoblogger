@@ -173,6 +173,17 @@ def stop_cron_job():
     cron_stop_event.set()  # Signal the thread to stop
     logging.info("Cron job has been stopped.")
 
+# Display cron job status
+st.subheader("Cron Job Status")
+
+if "cron_thread" in st.session_state and st.session_state["cron_thread"] is not None:
+    if st.session_state["cron_thread"].is_alive():
+        st.warning("🚨 Cron job is currently running!")
+    else:
+        st.success("✅ Cron job is NOT running.")
+else:
+    st.success("✅ Cron job is NOT running.")
+
 # Streamlit UI
 st.title("Automated WordPress Blog Post Creator")
 
