@@ -38,14 +38,12 @@ logging.basicConfig(
 # Initialize OpenAI client
 client = OpenAI(api_key=openai_api_key)
 
-# Global lock to prevent multiple cron jobs
-cron_lock = threading.Lock()
+# Global Variables (Use These Instead of `st.session_state` in Threads)
+cron_running_flag = False  # Controls the cron job
+cron_thread = None  # Stores the cron job thread
 
-# Initialize session state for cron tracking
-if "cron_running" not in st.session_state:
-    st.session_state["cron_running"] = False
-if "cron_thread" not in st.session_state:
-    st.session_state["cron_thread"] = None
+# Lock for thread-safe operations
+cron_lock = threading.Lock()
 
 async def generate_blog_content(blog_title, blog_topic, keywords):
     prompt = (
@@ -65,7 +63,6 @@ async def generate_blog_content(blog_title, blog_topic, keywords):
         return content
     except Exception as e:
         logging.error("Failed to generate blog content: %s", str(e))
-        st.error(f"Error generating blog content: {e}")
         return None
 
 def publish_blog_post(blog_post_title, blog_content):
@@ -95,49 +92,53 @@ def publish_blog_post(blog_post_title, blog_content):
 def cron_function():
     """
     A cron-like function that generates and publishes a blog post every 30 minutes.
-    Stops running when 'st.session_state["cron_running"]' is set to False.
+    Stops running when `cron_running_flag` is set to False.
     """
+    global cron_running_flag  # Ensure the thread checks this flag
     interval = 1800  # 30 minutes in seconds
-    next_run_time = time.time() + interval  # Set initial run time
 
-    while st.session_state["cron_running"]:  # Run only if cron is enabled
-        with cron_lock:
-            try:
-                current_time = time.time()
-                
-                if current_time >= next_run_time:
-                    # Define dynamic inputs for automation
-                    blog_title = f"Automated Post {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                    blog_topic = "Technology Trends"
-                    keywords = ["AI", "software development", "automation"]
+    while cron_running_flag:  # Only run if the flag is True
+        try:
+            with cron_lock:
+                logging.info("Cron job started: Checking if it's time to post.")
 
-                    logging.info("Cron job started: Generating blog content")
-                    blog_content = asyncio.run(generate_blog_content(blog_title, blog_topic, keywords))
+                # Generate dynamic post
+                blog_title = f"Automated Post {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                blog_topic = "Technology Trends"
+                keywords = ["AI", "software development", "automation"]
 
-                    if blog_content:
-                        logging.info("Cron job: Publishing blog content")
-                        publish_blog_post(blog_title, blog_content)
-                    else:
-                        logging.error("Cron job: Failed to generate blog content")
+                logging.info("Cron job started: Generating blog content")
+                blog_content = asyncio.run(generate_blog_content(blog_title, blog_topic, keywords))
 
-                    # Schedule next run
-                    next_run_time = current_time + interval
-                    logging.info("Cron job completed. Next run scheduled in 30 minutes.")
+                if blog_content:
+                    logging.info("Cron job: Publishing blog content")
+                    publish_blog_post(blog_title, blog_content)
                 else:
-                    time.sleep(5)
-            except Exception as e:
-                logging.error("Cron job failed: %s", str(e))
-                time.sleep(30)  # Sleep before retrying
+                    logging.error("Cron job: Failed to generate blog content")
 
-def start_cron_job_in_background():
+                logging.info("Cron job completed. Next run scheduled in 30 minutes.")
+
+            # Wait for the next run
+            for _ in range(interval // 5):  # Sleep in small intervals to allow stopping
+                if not cron_running_flag:
+                    logging.info("Cron job stopped before next run.")
+                    return
+                time.sleep(5)
+                
+        except Exception as e:
+            logging.error("Cron job failed: %s", str(e))
+            time.sleep(30)  # Wait before retrying to avoid overloading
+
+def start_cron_job():
     """
     Starts the cron job in a single background thread.
     """
-    if not st.session_state["cron_running"]:
-        st.session_state["cron_running"] = True  # Mark cron as running
-        thread = threading.Thread(target=cron_function, daemon=True)
-        thread.start()
-        st.session_state["cron_thread"] = thread
+    global cron_running_flag, cron_thread
+
+    if not cron_running_flag:
+        cron_running_flag = True  # Enable cron
+        cron_thread = threading.Thread(target=cron_function, daemon=True)
+        cron_thread.start()
         logging.info("Cron job thread started.")
     else:
         logging.info("Cron job is already running.")
@@ -146,29 +147,27 @@ def stop_cron_job():
     """
     Stops the cron job.
     """
-    if st.session_state["cron_running"]:
-        st.session_state["cron_running"] = False  # Stop loop in cron_function
-        logging.info("Cron job has been stopped.")
-        st.success("Cron job stopped.")
-    else:
-        logging.info("No cron job running.")
+    global cron_running_flag
+    cron_running_flag = False  # Disable cron
+    logging.info("Cron job has been stopped.")
 
 # Streamlit UI
 st.title("Automated WordPress Blog Post Creator")
 
 # Display cron job status
-st.write(f"Cron Status: {'Running' if st.session_state['cron_running'] else 'Stopped'}")
+st.write(f"**Cron Status:** {'🟢 Running' if cron_running_flag else '🔴 Stopped'}")
 
 # Start cron job
 if st.button("Start Cron Job", key="start_cron_button"):
     with st.spinner("Starting the cron job..."):
-        start_cron_job_in_background()
+        start_cron_job()
         st.success("Cron job started! The app will generate and publish a new post every 30 minutes.")
 
 # Stop cron job
 if st.button("Stop Cron Job", key="stop_cron_button"):
     with st.spinner("Stopping the cron job..."):
         stop_cron_job()
+        st.success("Cron job stopped.")
 
 # Input fields for user-defined title, topic, and keywords
 blog_title = st.text_input("Enter the blog title:", placeholder="e.g., The Future of AI in Software Development")
