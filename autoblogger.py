@@ -38,14 +38,19 @@ logging.basicConfig(
 # Initialize OpenAI client
 client = OpenAI(api_key=openai_api_key)
 
-# Global Variables (Use These Instead of `st.session_state` in Threads)
+# Global Variables for Cron Job
 cron_running_flag = False  # Controls the cron job
 cron_thread = None  # Stores the cron job thread
+cron_topic = None  # Stores the topic for cron-generated posts
+cron_keywords = None  # Stores the keywords for cron-generated posts
 
 # Lock for thread-safe operations
 cron_lock = threading.Lock()
 
 async def generate_blog_content(blog_title, blog_topic, keywords):
+    """
+    Uses OpenAI to generate a blog post based on the given title, topic, and keywords.
+    """
     prompt = (
         f"Create a detailed 15-minute read blog post titled '{blog_title}'. "
         f"Focus on the topic: '{blog_topic}' and incorporate the following keywords: {', '.join(keywords)}. "
@@ -65,7 +70,31 @@ async def generate_blog_content(blog_title, blog_topic, keywords):
         logging.error("Failed to generate blog content: %s", str(e))
         return None
 
+async def generate_blog_title(blog_topic, keywords):
+    """
+    Uses OpenAI to generate a relevant blog title based on the topic and keywords.
+    """
+    prompt = (
+        f"Generate an engaging and professional blog post title for the topic '{blog_topic}' "
+        f"incorporating the keywords: {', '.join(keywords)}. The title should be between 10-20 words, unique, and relevant."
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{'role': 'user', 'content': prompt}]
+        )
+        title = response.choices[0].message.content.strip().strip('"')
+        logging.info("Generated blog title: %s", title)
+        return title
+    except Exception as e:
+        logging.error("Failed to generate blog title: %s", str(e))
+        return "Untitled Blog Post"
+
 def publish_blog_post(blog_post_title, blog_content):
+    """
+    Publishes the blog post to WordPress.
+    """
     post_data = {
         'title': blog_post_title,
         'content': blog_content,
@@ -92,105 +121,87 @@ def publish_blog_post(blog_post_title, blog_content):
 def cron_function():
     """
     A cron-like function that generates and publishes a blog post every 30 minutes.
-    Stops running when `cron_running_flag` is set to False.
     """
-    global cron_running_flag  # Ensure the thread checks this flag
+    global cron_running_flag, cron_topic, cron_keywords  
     interval = 1800  # 30 minutes in seconds
 
-    while cron_running_flag:  # Only run if the flag is True
+    while cron_running_flag:
         try:
             with cron_lock:
                 logging.info("Cron job started: Checking if it's time to post.")
 
-                # Generate dynamic post
-                blog_title = f"Automated Post {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                blog_topic = "Technology Trends"
-                keywords = ["AI", "software development", "automation"]
+                # Generate a relevant title dynamically
+                blog_title = asyncio.run(generate_blog_title(cron_topic, cron_keywords))
 
-                logging.info("Cron job started: Generating blog content")
-                blog_content = asyncio.run(generate_blog_content(blog_title, blog_topic, keywords))
+                logging.info("Generating blog content for: %s", blog_title)
+                blog_content = asyncio.run(generate_blog_content(blog_title, cron_topic, cron_keywords))
 
                 if blog_content:
-                    logging.info("Cron job: Publishing blog content")
+                    logging.info("Publishing blog post: %s", blog_title)
                     publish_blog_post(blog_title, blog_content)
                 else:
                     logging.error("Cron job: Failed to generate blog content")
 
-                logging.info("Cron job completed. Next run scheduled in 30 minutes.")
+                logging.info("Cron job completed. Next run in 30 minutes.")
 
-            # Wait for the next run
-            for _ in range(interval // 5):  # Sleep in small intervals to allow stopping
+            # Sleep until the next scheduled post
+            for _ in range(interval // 5):
                 if not cron_running_flag:
                     logging.info("Cron job stopped before next run.")
                     return
                 time.sleep(5)
-                
+
         except Exception as e:
             logging.error("Cron job failed: %s", str(e))
-            time.sleep(30)  # Wait before retrying to avoid overloading
+            time.sleep(30)  # Wait before retrying
 
-def start_cron_job():
+def start_cron_job(topic, keywords):
     """
-    Starts the cron job in a single background thread.
+    Starts the cron job with user-specified topic and keywords.
     """
-    global cron_running_flag, cron_thread
+    global cron_running_flag, cron_thread, cron_topic, cron_keywords
+    cron_topic = topic
+    cron_keywords = keywords
+    cron_running_flag = True
 
-    if not cron_running_flag:
-        cron_running_flag = True  # Enable cron
+    if cron_thread is None or not cron_thread.is_alive():
         cron_thread = threading.Thread(target=cron_function, daemon=True)
         cron_thread.start()
         logging.info("Cron job thread started.")
-    else:
-        logging.info("Cron job is already running.")
 
 def stop_cron_job():
     """
     Stops the cron job.
     """
     global cron_running_flag
-    cron_running_flag = False  # Disable cron
+    cron_running_flag = False
     logging.info("Cron job has been stopped.")
 
 # Streamlit UI
 st.title("Automated WordPress Blog Post Creator")
 
-# Display cron job status
-st.write(f"**Cron Status:** {'🟢 Running' if cron_running_flag else '🔴 Stopped'}")
+# User Input
+blog_title = st.text_input("Enter the blog title:", placeholder="e.g., The Future of AI in Software Development")
+blog_topic = st.text_input("Enter the blog topic:", placeholder="e.g., Artificial Intelligence in Development")
+keywords = st.text_area("Enter keywords (comma-separated):", placeholder="e.g., AI, software development, innovation")
 
-# Start cron job
+# Cron Job Checkbox
+use_for_cron = st.checkbox("Use this topic and keywords for automated posting")
+
+# Start/Stop Cron Job
 if st.button("Start Cron Job", key="start_cron_button"):
     with st.spinner("Starting the cron job..."):
-        start_cron_job()
-        st.success("Cron job started! The app will generate and publish a new post every 30 minutes.")
+        start_cron_job(blog_topic, keywords.split(","))
+        st.success("Cron job started!")
 
-# Stop cron job
 if st.button("Stop Cron Job", key="stop_cron_button"):
     with st.spinner("Stopping the cron job..."):
         stop_cron_job()
         st.success("Cron job stopped.")
 
-# Input fields for user-defined title, topic, and keywords
-blog_title = st.text_input("Enter the blog title:", placeholder="e.g., The Future of AI in Software Development")
-blog_topic = st.text_input("Enter the blog topic:", placeholder="e.g., Artificial Intelligence in Development")
-keywords = st.text_area("Enter keywords (comma-separated):", placeholder="e.g., AI, software development, innovation")
-
-# Manual trigger for generating and publishing blog posts
+# Manual Post Generation
 if st.button("Generate and Publish Blog Post", key="manual_generate_button"):
-    if not blog_title or not blog_topic or not keywords:
-        st.error("Please fill in the blog title, topic, and keywords before proceeding.")
-    else:
-        keyword_list = [kw.strip() for kw in keywords.split(",") if kw.strip()]
-
-        with st.spinner("Generating blog content..."):
-            blog_content = asyncio.run(generate_blog_content(blog_title, blog_topic, keyword_list))
-
-        if blog_content:
-            with st.spinner("Publishing blog post to WordPress..."):
-                success = publish_blog_post(blog_title, blog_content)
-
-            if success:
-                st.success("Blog post published successfully!")
-            else:
-                st.error("Failed to publish blog post. Check the logs for details.")
-        else:
-            st.error("Failed to generate blog content. Check the logs for details.")
+    blog_content = asyncio.run(generate_blog_content(blog_title, blog_topic, keywords.split(",")))
+    if blog_content:
+        publish_blog_post(blog_title, blog_content)
+        st.success("Blog post published successfully!")
